@@ -493,6 +493,7 @@ class ImportVRMButton(bpy.types.Operator):
     def execute(self, context):
         try:
             bpy.ops.import_scene.vrm('INVOKE_DEFAULT')
+            context.scene.render.fps = 60
             print("Imported VRM file from: ", self.filepath)  # Print the filepath
 
             # Delete any image from the scene that doesn't start with either "Image_", "Matcap" or "Thumbnail"
