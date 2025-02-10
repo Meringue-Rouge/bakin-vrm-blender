@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Bakin VRM",
     "author": "ingenoire",
-    "version": (4, 0),
+    "version": (5, 0),
     "blender": (2, 80, 0),
     "location": "View3D > Tool Shelf > Run Script Button",
     "description": "Adds buttons that create itemhook bones and shape keys for both eye and head movement for VRoid VRM characters, for use with RPG Developer Bakin.",
@@ -14,6 +14,15 @@ import math
 import mathutils
 import textwrap
 import bmesh
+
+def update_animation_name(self, context):
+    return None
+
+bpy.types.Scene.animation_name = bpy.props.StringProperty(
+    name="Animation Name",
+    default="Idle",
+    update=update_animation_name
+)
 
 class AddItemHooksButton(bpy.types.Operator):
     bl_idname = "object.add_item_hooks"
@@ -227,7 +236,13 @@ class ExportFBXUnifiedButton(bpy.types.Operator):
     accurate_shadows_body_outlines: bpy.props.BoolProperty(
         name="Accurate Shadows &/OR Body Outlines",
         description="Using outlines, or want more accurate shadows? Enable this, as it'll make outlines usable and will cast shadows. This reduces graphical fidelity. Only on 8 or Unlimited Material modes.",
-        default=False
+        default=True
+    )
+    
+    use_new_vrm_shader: bpy.props.BoolProperty(
+        name="Use Official VRM Shader",
+        description="Enable to use the new VRM shader that directly imported VRMs use in Bakin, using VRM or VRM0 depending on the model. Turn off to use the original Toon shader.",
+        default=True
     )
 
     def invoke(self, context, event):
@@ -242,6 +257,9 @@ class ExportFBXUnifiedButton(bpy.types.Operator):
             layout.prop(self, "accurate_shadows_body_outlines")
         else:
             layout.label(text="Accurate Shadows &/OR Body Outlines (Only for 8/Unlimited Modes)", icon="INFO")
+            
+        
+        layout.prop(self, "use_new_vrm_shader")
 
         layout.label(text="Configure the export settings and click OK to proceed.")
 
@@ -249,15 +267,22 @@ class ExportFBXUnifiedButton(bpy.types.Operator):
         try:
             material_count = self.material_count
             accurate_shadows = self.accurate_shadows_body_outlines
-            self.export_fbx(context, material_count, accurate_shadows)
+            my_new_vrm_shader = self.accurate_shadows_body_outlines
+            self.export_fbx(context, material_count, accurate_shadows, my_new_vrm_shader)
         except Exception as e:
             self.report({'ERROR'}, f"Failed to export FBX: {e}")
             return {'CANCELLED'}
         return {'FINISHED'}
 
-    def export_fbx(self, context, material_count, accurate_shadows_body_outlines):
-        vrm_model_name = bpy.data.objects['Armature'].data.vrm_addon_extension.vrm1.meta['vrm_name'].replace(' ', '_')
-        dirpath = bpy.path.abspath("//" + vrm_model_name + " (Bakin Export)")
+    def export_fbx(self, context, material_count, accurate_shadows_body_outlines, my_new_vrm_shader):
+        is_vrm_10 = (bpy.data.objects['Armature'].data.vrm_addon_extension.spec_version == "1.0")
+        
+        if(is_vrm_10):
+            vrm_model_name = bpy.data.objects['Armature'].data.vrm_addon_extension.vrm1.meta['vrm_name'].replace(' ', '_')
+        else:
+            vrm_model_name = bpy.data.objects['Armature'].data.vrm_addon_extension.vrm0.meta.title.replace(' ', '_')
+        
+        dirpath = bpy.path.abspath("//" + vrm_model_name + " (BakinVRM)")
         os.makedirs(dirpath, exist_ok=True)
 
         for image in bpy.data.images:
@@ -275,6 +300,15 @@ class ExportFBXUnifiedButton(bpy.types.Operator):
             add_leaf_bones=False,
             use_tspace=True
         )
+        
+        
+        shader_line = "shader toon c3a93e68844545618e04eb31f52898c8"  # Default shader
+
+        if my_new_vrm_shader:
+            if is_vrm_10:
+                shader_line = "shader toonVRM cd4f425e2e9689db5dcd906708975e0c"
+            else:
+                shader_line = "shader toonVRM0X A8FC73041E11648931FD007D67C5DB6A"
 
         meshes = [obj for obj in bpy.data.objects if obj.type == 'MESH']
         single_body_mesh = 'Face' not in meshes and 'Hair' not in meshes
@@ -293,7 +327,7 @@ class ExportFBXUnifiedButton(bpy.types.Operator):
 
             for mat in materials_in_use:
                 f.write(f'mtl {mat.name}\n')
-                f.write('shader toon c3a93e68844545618e04eb31f52898c8\n')
+                f.write(shader_line + "\n")
                 f.write('emissiveBlink false\n')
                 f.write('emissiveBlinkSpeed 0.000000\n')
                 f.write('emissiveLinkBuildingLight false\n')
@@ -980,6 +1014,226 @@ class ExtractRabbitEarsButton(bpy.types.Operator):
         new_obj.name = "Bunny Ears"
 
         return {'FINISHED'}
+    
+class OBJECT_OT_export_vrm_for_bakin(bpy.types.Operator):
+    """Exports the scene as a VRM file using the model's name"""
+    bl_idname = "object.export_vrm_for_bakin"
+    bl_label = "Export VRM for Bakin"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        # Find the armature (VRM models use an armature)
+        armature = None
+        for obj in bpy.data.objects:
+            if obj.type == 'ARMATURE' and hasattr(obj.data, "vrm_addon_extension"):
+                armature = obj
+                break
+
+        if not armature:
+            self.report({'ERROR'}, "No valid VRM armature found.")
+            return {'CANCELLED'}
+
+        # Extract VRM version
+        vrm_extension = armature.data.vrm_addon_extension
+        is_vrm_10 = (bpy.data.objects['Armature'].data.vrm_addon_extension.spec_version == "1.0")
+        
+        if(is_vrm_10):
+            vrm_name = bpy.data.objects['Armature'].data.vrm_addon_extension.vrm1.meta['vrm_name'].replace(' ', '_')
+        else:
+            vrm_name = bpy.data.objects['Armature'].data.vrm_addon_extension.vrm0.meta.title.replace(' ', '_')
+
+        # Validate VRM name
+        if not vrm_name:
+            self.report({'ERROR'}, "VRM model name not found in metadata.")
+            return {'CANCELLED'}
+
+        # Get blend file directory
+        blend_filepath = bpy.data.filepath
+        if not blend_filepath:
+            self.report({'ERROR'}, "Please save the blend file first.")
+            return {'CANCELLED'}
+
+        blend_directory = os.path.dirname(blend_filepath)
+
+        # Define export folder and ensure it exists
+        export_folder = os.path.join(blend_directory, f"{vrm_name}(BakinVRM)")
+        os.makedirs(export_folder, exist_ok=True)
+
+        # Define VRM export file name
+        vrm_export_path = os.path.join(export_folder, f"{vrm_name}(BakinVRM).vrm")
+
+        # Export as VRM
+        bpy.ops.export_scene.vrm(filepath=vrm_export_path)
+
+        self.report({'INFO'}, f"Exported VRM to: {vrm_export_path}")
+        return {'FINISHED'}
+    
+class ImportBakinFBX(bpy.types.Operator):
+    """Automates importing of the FBX generated by Bakin"""
+    bl_idname = "object.import_fbx_from_bakin"
+    bl_label = "Process FBX for Bakin"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        # 1. CHECK IF BLEND FILE IS SAVED
+        blend_filepath = bpy.data.filepath
+        if not blend_filepath:
+            self.report({'ERROR'}, "Please save the blend file first.")
+            return {'CANCELLED'}
+        
+        blend_directory = os.path.dirname(blend_filepath)
+
+        # 2. FIND VRM ARMATURE
+        vrm_armature = None
+        for obj in bpy.data.objects:
+            if obj.type == 'ARMATURE' and hasattr(obj.data, "vrm_addon_extension"):
+                vrm_armature = obj
+                break
+
+        if not vrm_armature:
+            self.report({'ERROR'}, "No valid VRM armature found.")
+            return {'CANCELLED'}
+
+        # 3. DETECT VRM VERSION AND GET VRM NAME
+        vrm_extension = vrm_armature.data.vrm_addon_extension
+        is_vrm_10 = (vrm_extension.spec_version == "1.0")
+
+        if is_vrm_10:
+            vrm_name = vrm_extension.vrm1.meta.get("vrm_name", "Unnamed").replace(' ', '_')
+        else:
+            vrm_name = vrm_extension.vrm0.meta.title.replace(' ', '_')
+
+        if not vrm_name:
+            self.report({'ERROR'}, "VRM model name not found in metadata.")
+            return {'CANCELLED'}
+
+        # 4. IMPORT FBX AT SCALE 100x
+        fbx_path = os.path.join(blend_directory, f"{vrm_name}(BakinVRM)", f"{vrm_name}(BakinVRM).vrm.fbx")
+        
+        if not os.path.exists(fbx_path):
+            self.report({'ERROR'}, f"FBX file not found: {fbx_path}")
+            return {'CANCELLED'}
+
+        bpy.ops.import_scene.fbx(filepath=fbx_path, global_scale=100.0)
+
+        # 5. FIND NEWLY IMPORTED ARMATURE
+        imported_armature = None
+        for obj in bpy.context.selected_objects:
+            if obj.type == 'ARMATURE':
+                imported_armature = obj
+                break
+
+        if not imported_armature:
+            self.report({'ERROR'}, "Failed to find imported armature.")
+            return {'CANCELLED'}
+        
+        # 6. SET THE SCENE FRAME RATE BACK TO 60
+        context.scene.render.fps = 60
+
+        return {'FINISHED'}
+    
+class ExportAnimationFromBase(bpy.types.Operator):
+    """Exports the _base_ armature animation as an FBX"""
+    bl_idname = "object.export_base_animation"
+    bl_label = "Export _base_ Animation"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        # 1. SWITCH TO OBJECT MODE TO AVOID ERRORS
+        if bpy.ops.object.mode_set.poll():
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        # 2. FIND "_base_" ARMATURE
+        base_armature = bpy.data.objects.get("_base_")
+        if not base_armature or base_armature.type != 'ARMATURE':
+            self.report({'ERROR'}, "No '_base_' armature found in the scene.")
+            return {'CANCELLED'}
+
+        # 3. GET ANIMATION NAME FROM SCENE PROPERTY
+        animation_name = context.scene.animation_name.strip()
+        if not animation_name:
+            self.report({'ERROR'}, "No animation name provided.")
+            return {'CANCELLED'}
+
+        # 4. CHECK IF THERE'S AN ANIMATION
+        if not base_armature.animation_data or not base_armature.animation_data.action:
+            self.report({'ERROR'}, "No active animation on '_base_' armature.")
+            return {'CANCELLED'}
+
+        # 5. RENAME THE ACTION
+        baked_action = base_armature.animation_data.action
+        baked_action.name = animation_name  # Set action name to user input
+
+        # 6. PUSH DOWN THE ACTION INTO NLA
+        bpy.ops.object.select_all(action='DESELECT')
+        context.view_layer.objects.active = base_armature
+        base_armature.select_set(True)
+
+#        # Ensure _base_ has an NLA track
+#        if not base_armature.animation_data.nla_tracks:
+#            base_armature.animation_data.nla_tracks.new()
+
+#        # Push down the current action as a new strip
+#        nla_track = base_armature.animation_data.nla_tracks[-1]  # Use the last created track
+#        nla_strip = nla_track.strips.new(name=animation_name, start=1, action=baked_action)
+
+        # 7. FIND VRM MODEL NAME BEFORE DELETION
+        vrm_armature = bpy.data.objects.get("Armature")
+        if not vrm_armature:
+            self.report({'ERROR'}, "VRM couldn't be found.")
+            return {'CANCELLED'}
+
+        vrm_extension = vrm_armature.data.vrm_addon_extension
+        is_vrm_10 = (vrm_extension.spec_version == "1.0")
+
+        if is_vrm_10:
+            vrm_name = vrm_extension.vrm1.meta.get("vrm_name", "Unnamed").replace(' ', '_')
+        else:
+            vrm_name = vrm_extension.vrm0.meta.title.replace(' ', '_')
+
+        if not vrm_name:
+            self.report({'ERROR'}, "VRM model name not found in metadata.")
+            return {'CANCELLED'}
+
+        # 8. DELETE EVERYTHING EXCEPT "_base_"
+        bpy.ops.object.select_all(action='DESELECT')
+        context.view_layer.objects.active = None  # Ensure nothing is active
+
+        to_delete = [obj for obj in bpy.data.objects if obj.name != "_base_"]
+
+        for obj in to_delete:
+            bpy.data.objects.remove(obj, do_unlink=True)  # Safe removal
+
+        # 9. CREATE ANIMATIONS FOLDER INSIDE VRM EXPORT FOLDER
+        blend_directory = os.path.dirname(bpy.data.filepath)
+        vrm_export_folder = os.path.join(blend_directory, f"{vrm_name}(BakinVRM)")
+        animations_folder = os.path.join(vrm_export_folder, "animations")
+        os.makedirs(animations_folder, exist_ok=True)
+
+        # 10. EXPORT FBX AT SCALE 0.01, ARMATURE ONLY, NLA STRIPS ONLY
+        export_fbx_path = os.path.join(animations_folder, f"{vrm_name}_{animation_name}.fbx")
+
+        bpy.ops.export_scene.fbx(filepath=export_fbx_path,
+                                 object_types={'ARMATURE'},
+                                 global_scale=0.01,
+                                 bake_anim=True,
+                                 add_leaf_bones=False)
+
+        self.report({'INFO'}, f"Exported animation to: {export_fbx_path}")
+        return {'FINISHED'}
+    
+class OBJECT_OT_dialog_operator(bpy.types.Operator):
+    bl_idname = "object.dialog_operator"
+    bl_label = "Enter Animation Name"
+    
+    animation_name: bpy.props.StringProperty(name="Animation Name", default="wait")
+
+    def execute(self, context):
+        context.scene.animation_name = self.animation_name
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
 
 class RunScriptButtonPanel(bpy.types.Panel):
     bl_label = "VRoid for Bakin"
@@ -1022,14 +1276,40 @@ class RunScriptButtonPanel(bpy.types.Panel):
             layout.label(text="Warning: Blend file not saved!", icon='ERROR')
 
         # Export buttons
+        vrm_export_button = layout.row()
+        vrm_export_button.enabled = blend_file_saved
+        vrm_export_button.operator("object.export_vrm_for_bakin", text="VRM Export", icon='EXPORT')
+        
         export_button = layout.row()
         export_button.enabled = blend_file_saved
-        export_button.operator("object.export_fbx_unified", text="Export FBX + DEF", icon='EXPORT')
+        export_button.operator("object.export_fbx_unified", text="FBX+DEF Export (Legacy)", icon='EXPORT')
 
+        # Animation section
+        layout.label(text="Animation Exporter", icon='EXPORT')
+        
+        addon_module_name = "blender-animation-retargeting-stable"
+        addon_installed = False
+        for addon in bpy.context.preferences.addons:
+            if addon.module == addon_module_name:
+                addon_installed = True
+                break
+        
+        if addon_installed:
+            # If the add-on is installed, show a message
+            layout.label(text="Animation Retargeting is installed.", icon='CHECKMARK')
+            layout.operator("object.import_fbx_from_bakin", text="Import Bakin Retarget Model", icon='ANIM_DATA')
+            layout.prop(context.scene, "animation_name", text="Anim Name")  # Input Field
+            layout.operator("object.export_base_animation", text="Export _base_ Animation", icon='ANIM')
+            
+        else:
+            # If not installed, show a download link
+            layout.label(text="Animation Retargeting not found. Please download:")
+            download_link = layout.row()
+            download_link.operator("wm.url_open", text="Download Animation Retargeting", icon='URL').url = "https://github.com/Mwni/blender-animation-retargeting"
 
         # Wrapped export description labels
         export_descriptions = [
-            "Hover over the buttons to read a detailed description on the functionality of each button."
+            "VRM only: import the model into Bakin before animating!"
         ]
         for export_desc in export_descriptions:
             for line in textwrap.wrap(export_desc, width=40):
@@ -1037,6 +1317,7 @@ class RunScriptButtonPanel(bpy.types.Panel):
 
 def register():
     bpy.utils.register_class(ImportVRMButton)
+    bpy.utils.register_class(OBJECT_OT_export_vrm_for_bakin)
     bpy.utils.register_class(AddItemHooksButton)
     bpy.utils.register_class(AddHeadEyeShapeKeysButton)
     bpy.utils.register_class(FusionAndAddBonusesButton)
@@ -1045,19 +1326,30 @@ def register():
     bpy.utils.register_class(ExtractCatEarsButton)
     bpy.utils.register_class(ExportFBXUnifiedButton)
     bpy.utils.register_class(RunScriptButtonPanel)
-    bpy.utils.register_class(CreateAlternateIrisesButton)  # Register the new button
+    bpy.utils.register_class(ImportBakinFBX)
+    bpy.utils.register_class(CreateAlternateIrisesButton)
+    bpy.utils.register_class(ExportAnimationFromBase)
+    bpy.utils.register_class(OBJECT_OT_dialog_operator)
+    
+    bpy.types.Scene.animation_name = bpy.props.StringProperty(name="Animation Name", default="Idle")
 
 def unregister():
     bpy.utils.unregister_class(ImportVRMButton)
     bpy.utils.unregister_class(AddItemHooksButton)
+    bpy.utils.unregister_class(OBJECT_OT_export_vrm_for_bakin)
     bpy.utils.unregister_class(AddHeadEyeShapeKeysButton)
     bpy.utils.unregister_class(FusionAndAddBonusesButton)
     bpy.utils.unregister_class(ExportFBXUnifiedButton)
     bpy.utils.unregister_class(ExtractGlassesButton)
     bpy.utils.unregister_class(ExtractRabbitEarsButton)
     bpy.utils.unregister_class(ExtractCatEarsButton)
+    bpy.utils.unregister_class(ImportBakinFBX)
     bpy.utils.unregister_class(CreateAlternateIrisesButton)
     bpy.utils.unregister_class(RunScriptButtonPanel)
+    bpy.utils.unregister_class(ExportAnimationFromBase)
+    bpy.utils.unregister_class(OBJECT_OT_dialog_operator)
+    del bpy.types.Scene.animation_name
+
 
 if __name__ == "__main__":
     register()
