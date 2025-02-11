@@ -4,6 +4,12 @@
 **A Blender Addon that allows you to quickly rig and export VRM models for use with RPG Developer Bakin with item hooks, new shape keys for head tilting and eye looking, automatic material imports, and other fixes.
 Works for both VRM 0.0 models and VRM 1.0 models.**
 
+![img](https://img.itch.zone/aW1nLzE5ODE5MzY0LnBuZw==/original/pNmccj.png)
+
+[A full tutorial on getting native VRM models working from start to finish in Bakin has been released!](https://meringue-rouge.itch.io/guide-rpg-developer-bakin-vrm-models-animations-rigging-and-more)
+
+### V4.5: Native VRM support + Full Tutorial released!
+
 >⚠️ You'll need the VRM Addon for Blender. https://vrm-addon-for-blender.info/en/
 >
 >⚠️ We strongly recommend you use VRoid VRM 1.0 models exported with materials reduced to 8, as that's the main model type I'm working with. Some features aren't supported for models with materials reduced set to 2.
@@ -11,26 +17,10 @@ Works for both VRM 0.0 models and VRM 1.0 models.**
 - *If you wish to import general models for BAKIN using PBR, use this Blender add-on instead: https://github.com/Ingenoire/bakin-blender-exporter*
 - *If you wish to animate the VRM models with baked-in hair/bust/outfit physics for your Bakin game, check out this add-on I made: https://github.com/Ingenoire/VRM-Spacing-Animation-Baking*
 
-### V4.0: Multiple Irises through Blend Shapes added!
-
-| Original Iris | Alternate Iris (#2 in this case) |
-| --- | --- |
-| ![img](https://i.imgur.com/fBlglrl.png) | ![img](https://i.imgur.com/pMgZzgm.png) |
-
-A pretty major (optional) feature, you can now load in a new texture that holds up to 4 different irises, and you'll be able to swap the iris textures in Bakin on the fly! This is great for creating more expressive characters through the use of things like heart-shaped eyes, soulless eyes, etc...
-Characters need expressions, and it'd be a shame if your character couldn't show more emotion!
-
-- You'll need to supply a 4096x4096 image texture layed out like the template image here: https://github.com/Ingenoire/bakin-vrm-blender/blob/main/iris_template.png. Best to use textures straight out of VRoid Studio by exporting them from there first (edit iris textures), upscale them if needed, and place both their iris and highlights in the same way. For best results, in your image editor, display a 1024x1024 grid to make things easier.
-- If you want to do this step, you'll need to do it before merging the meshes.
-- Your model needs to have been exported with a 4096x4096 texture resolution to use (default settings when reducing materials in VRoid Studio). No testing was done with different texture sizes.
-- In Bakin, you'll need to enable the ALTERNATE_IRIS 1 to 4 shape key, ideally without resetting other shape keys, for it to show up.
-
->⚠️ Bug #1: The highlights of the alternate irises are a bit off, so feel free to place the highlight over the iris in your alternate irises.
->
->⚠️ Bug #2: if you manipulate the shape keys of the model before pressing the "Add Alternate Irises" button, it will stack all the irises in the original iris (that's bad). If this happens, make a new blender scene and re-import the VRM, and just press the buttons in order, without fiddling with the shape keys in Blender.
-
 ### Features
 - Simple and straightforward workflow: no need to touch anything Blender related if you don't want to!
+- Can export VRMs and FBX formats for RPG Developer Bakin with enhancements.
+- Animation utility for use with Native VRM models, so that the animations can play correctly in Bakin [see tutorial](https://meringue-rouge.itch.io/guide-rpg-developer-bakin-vrm-models-animations-rigging-and-more).
 - Automatic item hook bones, so that your character can hold items in engine!
 - Creates shape keys for head (tilt head) and eyes (look at), for better emotions in engine!
 - Higher quality 8 and unlimited material modes supported (compared to 2 from Bakin tutorials) for more accurate looking models!
