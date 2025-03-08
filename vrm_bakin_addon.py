@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Bakin VRM",
     "author": "ingenoire",
-    "version": (5, 0),
+    "version": (5, 1),
     "blender": (2, 80, 0),
     "location": "View3D > Tool Shelf > Run Script Button",
     "description": "Adds buttons that create itemhook bones and shape keys for both eye and head movement for VRoid VRM characters, for use with RPG Developer Bakin.",
@@ -1134,51 +1134,56 @@ class ImportBakinFBX(bpy.types.Operator):
         return {'FINISHED'}
     
 class ExportAnimationFromBase(bpy.types.Operator):
-    """Exports the _base_ armature animation as an FBX"""
+    """Exports the _base_ armature animation as an FBX clip"""
     bl_idname = "object.export_base_animation"
     bl_label = "Export _base_ Animation"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        # 1. SWITCH TO OBJECT MODE TO AVOID ERRORS
+        # 1. Switch to Object Mode to avoid errors
         if bpy.ops.object.mode_set.poll():
             bpy.ops.object.mode_set(mode='OBJECT')
 
-        # 2. FIND "_base_" ARMATURE
+        # 2. Find "_base_" armature
         base_armature = bpy.data.objects.get("_base_")
         if not base_armature or base_armature.type != 'ARMATURE':
             self.report({'ERROR'}, "No '_base_' armature found in the scene.")
             return {'CANCELLED'}
 
-        # 3. GET ANIMATION NAME FROM SCENE PROPERTY
+        # 3. Get animation name from scene property
         animation_name = context.scene.animation_name.strip()
         if not animation_name:
             self.report({'ERROR'}, "No animation name provided.")
             return {'CANCELLED'}
 
-        # 4. CHECK IF THERE'S AN ANIMATION
+        # 4. Check if there's an animation
         if not base_armature.animation_data or not base_armature.animation_data.action:
             self.report({'ERROR'}, "No active animation on '_base_' armature.")
             return {'CANCELLED'}
 
-        # 5. RENAME THE ACTION
+        # 5. Rename the action
         baked_action = base_armature.animation_data.action
         baked_action.name = animation_name  # Set action name to user input
 
-        # 6. PUSH DOWN THE ACTION INTO NLA
-        bpy.ops.object.select_all(action='DESELECT')
-        context.view_layer.objects.active = base_armature
-        base_armature.select_set(True)
+        # 6. Push the action into NLA as a clip
+        # Ensure animation_data exists and create it if necessary
+        if not base_armature.animation_data:
+            base_armature.animation_data_create()
 
-#        # Ensure _base_ has an NLA track
-#        if not base_armature.animation_data.nla_tracks:
-#            base_armature.animation_data.nla_tracks.new()
+        # Ensure there’s at least one NLA track
+        if not base_armature.animation_data.nla_tracks:
+            base_armature.animation_data.nla_tracks.new()
 
-#        # Push down the current action as a new strip
-#        nla_track = base_armature.animation_data.nla_tracks[-1]  # Use the last created track
-#        nla_strip = nla_track.strips.new(name=animation_name, start=1, action=baked_action)
+        # Create a new strip in the last NLA track
+        nla_track = base_armature.animation_data.nla_tracks[-1]
+        start_frame = 1  # Start the clip at frame 1
+        nla_strip = nla_track.strips.new(name=animation_name, start=start_frame, action=baked_action)
+        nla_strip.extrapolation = 'NOTHING'  # Set extrapolation to None
 
-        # 7. FIND VRM MODEL NAME BEFORE DELETION
+        # Clear the active action to ensure NLA drives the animation
+        base_armature.animation_data.action = None
+
+        # 7. Find VRM model name before deletion
         vrm_armature = bpy.data.objects.get("Armature")
         if not vrm_armature:
             self.report({'ERROR'}, "VRM couldn't be found.")
@@ -1196,31 +1201,49 @@ class ExportAnimationFromBase(bpy.types.Operator):
             self.report({'ERROR'}, "VRM model name not found in metadata.")
             return {'CANCELLED'}
 
-        # 8. DELETE EVERYTHING EXCEPT "_base_"
+        # 8. Delete everything except "_base_"
         bpy.ops.object.select_all(action='DESELECT')
         context.view_layer.objects.active = None  # Ensure nothing is active
 
         to_delete = [obj for obj in bpy.data.objects if obj.name != "_base_"]
-
         for obj in to_delete:
             bpy.data.objects.remove(obj, do_unlink=True)  # Safe removal
 
-        # 9. CREATE ANIMATIONS FOLDER INSIDE VRM EXPORT FOLDER
+        # 9. Create animations folder inside VRM export folder
         blend_directory = os.path.dirname(bpy.data.filepath)
         vrm_export_folder = os.path.join(blend_directory, f"{vrm_name}(BakinVRM)")
         animations_folder = os.path.join(vrm_export_folder, "animations")
         os.makedirs(animations_folder, exist_ok=True)
 
-        # 10. EXPORT FBX AT SCALE 0.01, ARMATURE ONLY, NLA STRIPS ONLY
+        # 10. Export FBX with the clip’s frame range
+        # Define the export path for the FBX file
         export_fbx_path = os.path.join(animations_folder, f"{vrm_name}_{animation_name}.fbx")
 
-        bpy.ops.export_scene.fbx(filepath=export_fbx_path,
-                                 object_types={'ARMATURE'},
-                                 global_scale=0.01,
-                                 bake_anim=True,
-                                 add_leaf_bones=False)
+        # Define the bake range based on the NLA strip’s frames
+        bake_start = int(nla_strip.frame_start)  # Start frame of the animation clip
+        bake_end = int(nla_strip.frame_end)      # End frame of the animation clip
 
-        self.report({'INFO'}, f"Exported animation to: {export_fbx_path}")
+        # Select only the armature to export
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.context.view_layer.objects.active = base_armature
+        base_armature.select_set(True)
+
+        # Set the scene’s frame range to the clip’s range
+        bpy.context.scene.frame_start = bake_start
+        bpy.context.scene.frame_end = bake_end
+
+        # Export the FBX file
+        bpy.ops.export_scene.fbx(
+            filepath=export_fbx_path,           # Path to save the FBX file
+            use_selection=True,                 # Export only the selected armature
+            object_types={'ARMATURE'},          # Export armature objects
+            global_scale=0.01,                  # Scale for compatibility (e.g., with game engines)
+            bake_anim=True,                     # Bake the animation during export
+            add_leaf_bones=False                # Avoid adding extra bones
+        )
+
+        # Report success
+        self.report({'INFO'}, f"Exported animation clip to: {export_fbx_path}")
         return {'FINISHED'}
     
 class OBJECT_OT_dialog_operator(bpy.types.Operator):
