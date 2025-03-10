@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Bakin VRM",
     "author": "ingenoire",
-    "version": (5, 1),
+    "version": (5, 1, 1),
     "blender": (2, 80, 0),
     "location": "View3D > Tool Shelf > Run Script Button",
     "description": "Adds buttons that create itemhook bones and shape keys for both eye and head movement for VRoid VRM characters, for use with RPG Developer Bakin.",
@@ -1238,7 +1238,8 @@ class ExportAnimationFromBase(bpy.types.Operator):
             use_selection=True,                 # Export only the selected armature
             object_types={'ARMATURE'},          # Export armature objects
             global_scale=0.01,                  # Scale for compatibility (e.g., with game engines)
-            bake_anim=True,                     # Bake the animation during export
+            bake_anim=True,
+            bake_anim_use_all_actions=False,
             add_leaf_bones=False                # Avoid adding extra bones
         )
 
