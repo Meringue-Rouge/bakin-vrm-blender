@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Bakin VRM",
     "author": "ingenoire",
-    "version": (5, 1, 1),
+    "version": (5, 2, 0),
     "blender": (2, 80, 0),
     "location": "View3D > Tool Shelf > Run Script Button",
     "description": "Adds buttons that create itemhook bones and shape keys for both eye and head movement for VRoid VRM characters, for use with RPG Developer Bakin.",
@@ -510,13 +510,17 @@ class ImportVRMButton(bpy.types.Operator):
 class FusionAndAddBonusesButton(bpy.types.Operator):
     bl_idname = "object.fusion_and_add_bonuses"
     bl_label = "Fusion Meshes and Hair/Head Keys"
-    bl_description = "Strongly recommended (8 materials / unlimited materials only). Merges all the meshes together and merges both head and hair shape keys into a new Head shapekey that handles both at once!"
+    bl_description = "Strongly recommended (8 materials / unlimited materials only). Merges all meshes (including all with 'Hair' in the name) together and merges both head and hair shape keys into a new Head shapekey that handles both at once!"
 
     def execute(self, context):
-        # Ensure the objects exist
-        if "Hair" not in bpy.data.objects or "Face" not in bpy.data.objects or "Body" not in bpy.data.objects:
+        # Ensure required objects exist (Face and Body) and find all Hair meshes
+        hair_objects = [obj for obj in bpy.data.objects if "Hair" in obj.name and obj.type == 'MESH']
+        if not hair_objects or "Face" not in bpy.data.objects or "Body" not in bpy.data.objects:
             self.report({'ERROR'}, "Required objects are missing (Hair, Face, Body).")
             return {'CANCELLED'}
+
+        face = bpy.data.objects["Face"]
+        body = bpy.data.objects["Body"]
 
         # Dictionary to store the outline_width_mode values
         outline_width_mode_values = {}
@@ -529,29 +533,26 @@ class FusionAndAddBonusesButton(bpy.types.Operator):
                     try:
                         outline_width_mode = material.vrm_addon_extension.mtoon1.extensions.vrmc_materials_mtoon.outline_width_mode
                         outline_width_mode_values[material.name] = outline_width_mode
-                        print(outline_width_mode_values[material.name])
                     except AttributeError:
                         # If the material doesn't have this property, continue
                         pass
 
-        # Store outline_width_mode for Hair, Face, and Body
-        store_outline_width_mode(bpy.data.objects["Hair"])
-        store_outline_width_mode(bpy.data.objects["Face"])
-        store_outline_width_mode(bpy.data.objects["Body"])
+        # Store outline_width_mode for all Hair objects, Face, and Body
+        for hair_obj in hair_objects:
+            store_outline_width_mode(hair_obj)
+        store_outline_width_mode(face)
+        store_outline_width_mode(body)
 
-        # Join Hair into Face
-        hair = bpy.data.objects["Hair"]
-        face = bpy.data.objects["Face"]
+        # Join all Hair objects into Face
         bpy.ops.object.select_all(action='DESELECT')
         face.select_set(True)
         bpy.context.view_layer.objects.active = face
         bpy.ops.object.mode_set(mode='OBJECT')
-        hair.select_set(True)
+        for hair_obj in hair_objects:
+            hair_obj.select_set(True)
         bpy.ops.object.join()
 
-        # Join Face into Body
-        face = bpy.data.objects["Face"]  # Now Face includes Hair
-        body = bpy.data.objects["Body"]
+        # Join Face (now including all Hair) into Body
         bpy.ops.object.select_all(action='DESELECT')
         body.select_set(True)
         bpy.context.view_layer.objects.active = body
@@ -559,7 +560,7 @@ class FusionAndAddBonusesButton(bpy.types.Operator):
         face.select_set(True)
         bpy.ops.object.join()
 
-        # Get the newly joined object (which is now the Body with Face and Hair)
+        # Get the newly joined object (which is now the Body with Face and all Hair)
         merged_obj = bpy.context.active_object
 
         # Reassign the outline_width_mode to the merged object's materials
@@ -585,7 +586,7 @@ class FusionAndAddBonusesButton(bpy.types.Operator):
             self.report({'ERROR'}, "Shape keys not found in the merged object.")
             return {'CANCELLED'}
 
-        # Find pairs of HEAD_ and HAIR_ shape keys
+        # Find pairs of HEAD_, HAIR_, and BODY_ shape keys
         head_keys = {key.name: key for key in shape_keys.key_blocks if key.name.startswith("HEAD_")}
         hair_keys = {key.name: key for key in shape_keys.key_blocks if key.name.startswith("HAIR_")}
         body_keys = {key.name: key for key in shape_keys.key_blocks if key.name.startswith("BODY_")}
@@ -886,10 +887,15 @@ def move_vertices_in_group(bm, mesh_obj, group_index, translation_vector):
     
 class ExtractGlassesButton(bpy.types.Operator):
     bl_idname = "object.extract_glasses"
-    bl_label = "Extract Glasses BETA"
-    bl_description = "Isolates any glasses on your VRM model so that you can load them separately through BAKIN's Subgraphics. At present, you'll need to export this separately through the Blender FBX exporter, select the glasses alone, limit export to selected only, then delete it and export the rest of the model through the addon."
+    bl_label = "Extract/Export/Delete Glasses"
+    bl_description = "Isolates any glasses on your VRM model, sets their origin to the head bone, exports them as an FBX file for Bakin's Subgraphics, and removes them from the scene."
 
     def execute(self, context):
+        # Check if the .blend file is saved
+        if not bpy.data.filepath:
+            self.report({'ERROR'}, "Please save the .blend file before running this operation.")
+            return {'CANCELLED'}
+
         obj = bpy.context.object
         
         if obj is None or obj.type != 'MESH':
@@ -922,12 +928,94 @@ class ExtractGlassesButton(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='OBJECT')
 
         # Rename the newly created object
-        # The newly created object will be the active object after separation
         new_obj = bpy.context.selected_objects[-1]
         new_obj.name = "Glasses"
 
-        return {'FINISHED'}
+        # Get the armature from the Glasses object's Armature modifier
+        armature = None
+        for mod in new_obj.modifiers:
+            if mod.type == 'ARMATURE':
+                armature = mod.object
+                break
+        if not armature:
+            self.report({'ERROR'}, "No armature found for the glasses.")
+            return {'CANCELLED'}
 
+        # Select the armature
+        bpy.context.view_layer.objects.active = armature
+        armature.select_set(True)
+
+        # Switch to pose mode
+        bpy.ops.object.mode_set(mode='POSE')
+
+        # Select the J_Bip_C_Head bone
+        if "J_Bip_C_Head" in armature.pose.bones:
+            bone = armature.pose.bones["J_Bip_C_Head"]
+            bone.bone.select = True
+        else:
+            self.report({'ERROR'}, "J_Bip_C_Head bone not found.")
+            return {'CANCELLED'}
+
+        # Place the 3D cursor to the selected bone's head
+        bpy.ops.view3d.snap_cursor_to_selected()
+
+        # Switch back to Object Mode
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        # Select the "Glasses" object
+        bpy.ops.object.select_all(action='DESELECT')
+        new_obj.select_set(True)
+        bpy.context.view_layer.objects.active = new_obj
+
+        # Set origin to 3D cursor
+        bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
+
+        # Place the 3D cursor to world origin and move glasses there
+        bpy.context.scene.cursor.location = (0, 0, 0)
+        bpy.ops.view3d.snap_selected_to_cursor(use_offset=False)
+
+        # Get the VRM name from the armature
+        vrm_extension = armature.data.vrm_addon_extension
+        is_vrm_10 = (vrm_extension.spec_version == "1.0")
+        if is_vrm_10:
+            vrm_name = vrm_extension.vrm1.meta['vrm_name'].replace(' ', '_')
+        else:
+            vrm_name = vrm_extension.vrm0.meta.title.replace(' ', '_')
+        if not vrm_name:
+            self.report({'ERROR'}, "VRM model name not found in metadata.")
+            return {'CANCELLED'}
+
+        # Get blend file directory
+        blend_filepath = bpy.data.filepath
+        blend_directory = os.path.dirname(blend_filepath)
+
+        # Define export folder and ensure it exists
+        export_folder = os.path.join(blend_directory, f"{vrm_name}(BakinVRM)")
+        os.makedirs(export_folder, exist_ok=True)
+
+        # Define FBX export file name
+        fbx_export_path = os.path.join(export_folder, f"{vrm_name}_Wear_Glasses.fbx")
+
+        # Select only the "Glasses" object
+        bpy.ops.object.select_all(action='DESELECT')
+        new_obj.select_set(True)
+
+        # Export as FBX with specified settings
+        bpy.ops.export_scene.fbx(
+            filepath=fbx_export_path,
+            use_selection=True,
+            global_scale=0.01,
+            use_mesh_modifiers=False,
+            add_leaf_bones=False,
+            use_tspace=True
+        )
+
+        # Delete the "Glasses" object
+        bpy.data.objects.remove(new_obj, do_unlink=True)
+
+        self.report({'INFO'}, f"Exported glasses to: {fbx_export_path}")
+        return {'FINISHED'}
+        
 class ExtractCatEarsButton(bpy.types.Operator):
     bl_idname = "object.extract_cat_ears"
     bl_label = "Extract Cat Ears BETA"
@@ -1289,7 +1377,6 @@ class RunScriptButtonPanel(bpy.types.Panel):
         
         
         layout.label(text="Optionals BETA", icon='MATCLOTH')
-        layout.operator("object.extract_glasses", icon='LAYER_USED')
         layout.operator("object.extract_rabbit_ears", icon='LAYER_USED')
         layout.operator("object.extract_cat_ears", icon='LAYER_USED')
         
@@ -1299,6 +1386,11 @@ class RunScriptButtonPanel(bpy.types.Panel):
         # Display warning if blend file is not saved
         if not blend_file_saved:
             layout.label(text="Warning: Blend file not saved!", icon='ERROR')
+
+        # Extract Glasses button (moved here and tied to blend_file_saved)
+        glasses_button = layout.row()
+        glasses_button.enabled = blend_file_saved
+        glasses_button.operator("object.extract_glasses", icon='LAYER_USED')
 
         # Export buttons
         vrm_export_button = layout.row()
