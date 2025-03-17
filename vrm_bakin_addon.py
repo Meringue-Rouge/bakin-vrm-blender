@@ -887,8 +887,8 @@ def move_vertices_in_group(bm, mesh_obj, group_index, translation_vector):
     
 class ExtractGlassesButton(bpy.types.Operator):
     bl_idname = "object.extract_glasses"
-    bl_label = "Extract/Export/Delete Glasses"
-    bl_description = "Isolates any glasses on your VRM model, sets their origin to the head bone, exports them as an FBX file for Bakin's Subgraphics, and removes them from the scene."
+    bl_label = "Eyewear Only: Split, Export & Delete"
+    bl_description = "Isolates glasses from the VRM model, cleans up materials and shape keys, and optionally exports and deletes them."
 
     def execute(self, context):
         # Check if the .blend file is saved
@@ -902,7 +902,7 @@ class ExtractGlassesButton(bpy.types.Operator):
             self.report({'ERROR'}, "No mesh object selected.")
             return {'CANCELLED'}
 
-        # Ensure we're in Object mode to perform operations
+        # Ensure we're in Object mode
         bpy.ops.object.mode_set(mode='OBJECT')
 
         # Get vertex groups containing 'glasses'
@@ -912,13 +912,13 @@ class ExtractGlassesButton(bpy.types.Operator):
             self.report({'WARNING'}, "No vertex groups containing 'glasses' found.")
             return {'CANCELLED'}
 
-        # Switch to Edit mode to perform mesh operations
+        # Switch to Edit mode to select vertices
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.mesh.select_all(action='DESELECT')
         
-        # Iterate over each glasses vertex group and select vertices
+        # Select vertices in glasses vertex groups
         for vgroup in glasses_groups:
-            obj.vertex_groups.active = vgroup  # Set the active vertex group
+            obj.vertex_groups.active = vgroup
             bpy.ops.object.vertex_group_select()
 
         # Separate selected vertices into a new object
@@ -927,7 +927,7 @@ class ExtractGlassesButton(bpy.types.Operator):
         # Switch back to Object mode
         bpy.ops.object.mode_set(mode='OBJECT')
 
-        # Rename the newly created object
+        # Rename the new object
         new_obj = bpy.context.selected_objects[-1]
         new_obj.name = "Glasses"
 
@@ -941,11 +941,9 @@ class ExtractGlassesButton(bpy.types.Operator):
             self.report({'ERROR'}, "No armature found for the glasses.")
             return {'CANCELLED'}
 
-        # Select the armature
+        # Select the armature and switch to Pose mode
         bpy.context.view_layer.objects.active = armature
         armature.select_set(True)
-
-        # Switch to pose mode
         bpy.ops.object.mode_set(mode='POSE')
 
         # Select the J_Bip_C_Head bone
@@ -956,10 +954,10 @@ class ExtractGlassesButton(bpy.types.Operator):
             self.report({'ERROR'}, "J_Bip_C_Head bone not found.")
             return {'CANCELLED'}
 
-        # Place the 3D cursor to the selected bone's head
+        # Snap the 3D cursor to the head bone
         bpy.ops.view3d.snap_cursor_to_selected()
 
-        # Switch back to Object Mode
+        # Switch back to Object mode
         bpy.ops.object.mode_set(mode='OBJECT')
 
         # Select the "Glasses" object
@@ -967,53 +965,92 @@ class ExtractGlassesButton(bpy.types.Operator):
         new_obj.select_set(True)
         bpy.context.view_layer.objects.active = new_obj
 
-        # Set origin to 3D cursor
+        # Set origin to 3D cursor (head bone position)
         bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
 
-        # Place the 3D cursor to world origin and move glasses there
+        # Move glasses to world origin
         bpy.context.scene.cursor.location = (0, 0, 0)
         bpy.ops.view3d.snap_selected_to_cursor(use_offset=False)
 
-        # Get the VRM name from the armature
-        vrm_extension = armature.data.vrm_addon_extension
-        is_vrm_10 = (vrm_extension.spec_version == "1.0")
-        if is_vrm_10:
-            vrm_name = vrm_extension.vrm1.meta['vrm_name'].replace(' ', '_')
+        # Cleanup Materials
+        glasses_materials = [slot for slot in new_obj.material_slots if slot.material and 'Glasses' in slot.material.name]
+        if not glasses_materials:
+            self.report({'WARNING'}, "No materials with 'Glasses' in the name found for the glasses.")
         else:
-            vrm_name = vrm_extension.vrm0.meta.title.replace(' ', '_')
-        if not vrm_name:
-            self.report({'ERROR'}, "VRM model name not found in metadata.")
-            return {'CANCELLED'}
+            default_slot_index = new_obj.material_slots.find(glasses_materials[0].name)
+            for poly in new_obj.data.polygons:
+                if new_obj.material_slots[poly.material_index] not in glasses_materials:
+                    poly.material_index = default_slot_index
+            slots_to_remove = [i for i, slot in enumerate(new_obj.material_slots) if slot not in glasses_materials]
+            for i in sorted(slots_to_remove, reverse=True):
+                new_obj.active_material_index = i
+                bpy.ops.object.material_slot_remove()
 
-        # Get blend file directory
-        blend_filepath = bpy.data.filepath
-        blend_directory = os.path.dirname(blend_filepath)
+        # Remove All Vertex Groups
+        new_obj.vertex_groups.clear()
 
-        # Define export folder and ensure it exists
-        export_folder = os.path.join(blend_directory, f"{vrm_name}(BakinVRM)")
-        os.makedirs(export_folder, exist_ok=True)
+        # Remove Shape Keys in Specified Order
+        if new_obj.data.shape_keys:
+            shape_keys = new_obj.data.shape_keys.key_blocks
+            for key in list(shape_keys):
+                if "HEAD" in key.name:
+                    new_obj.shape_key_remove(key)
+            for key in list(shape_keys):
+                if key.name != "Basis":
+                    new_obj.shape_key_remove(key)
+            if "Basis" in shape_keys:
+                new_obj.shape_key_remove(shape_keys["Basis"])
 
-        # Define FBX export file name
-        fbx_export_path = os.path.join(export_folder, f"{vrm_name}_Wear_Glasses.fbx")
+        # Remove Armature Modifier
+        for mod in new_obj.modifiers:
+            if mod.type == 'ARMATURE':
+                new_obj.modifiers.remove(mod)
+                break
 
-        # Select only the "Glasses" object
+        # Recenter Glasses at Scene Origin
         bpy.ops.object.select_all(action='DESELECT')
         new_obj.select_set(True)
+        bpy.context.view_layer.objects.active = new_obj
+        bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_MASS', center='BOUNDS')
+        bpy.context.scene.cursor.location = (0, 0, 0)
+        bpy.ops.view3d.snap_selected_to_cursor(use_offset=False)
 
-        # Export as FBX with specified settings
-        bpy.ops.export_scene.fbx(
-            filepath=fbx_export_path,
-            use_selection=True,
-            global_scale=0.01,
-            use_mesh_modifiers=False,
-            add_leaf_bones=False,
-            use_tspace=True
-        )
+        # Conditional Export and Deletion
+        if not context.scene.no_export_glasses:
+            # Get the VRM name from the armature
+            vrm_extension = armature.data.vrm_addon_extension
+            is_vrm_10 = (vrm_extension.spec_version == "1.0")
+            if is_vrm_10:
+                vrm_name = vrm_extension.vrm1.meta['vrm_name'].replace(' ', '_')
+            else:
+                vrm_name = vrm_extension.vrm0.meta.title.replace(' ', '_')
+            if not vrm_name:
+                self.report({'ERROR'}, "VRM model name not found in metadata.")
+                return {'CANCELLED'}
 
-        # Delete the "Glasses" object
-        bpy.data.objects.remove(new_obj, do_unlink=True)
+            blend_filepath = bpy.data.filepath
+            blend_directory = os.path.dirname(blend_filepath)
+            export_folder = os.path.join(blend_directory, f"{vrm_name}(BakinVRM)")
+            os.makedirs(export_folder, exist_ok=True)
+            fbx_export_path = os.path.join(export_folder, f"{vrm_name}_Wear_Glasses.fbx")
 
-        self.report({'INFO'}, f"Exported glasses to: {fbx_export_path}")
+            bpy.ops.object.select_all(action='DESELECT')
+            new_obj.select_set(True)
+
+            bpy.ops.export_scene.fbx(
+                filepath=fbx_export_path,
+                use_selection=True,
+                global_scale=0.01,
+                use_mesh_modifiers=False,
+                add_leaf_bones=False,
+                use_tspace=True
+            )
+
+            bpy.data.objects.remove(new_obj, do_unlink=True)
+            self.report({'INFO'}, f"Exported glasses to: {fbx_export_path}")
+        else:
+            self.report({'INFO'}, "Glasses extracted and cleaned up but not exported or deleted.")
+
         return {'FINISHED'}
         
 class ExtractCatEarsButton(bpy.types.Operator):
@@ -1375,22 +1412,23 @@ class RunScriptButtonPanel(bpy.types.Panel):
 
         layout.operator("object.fusion_and_add_bonuses", icon='EVENT_THREEKEY')
         
-        
-        layout.label(text="Optionals BETA", icon='MATCLOTH')
-        layout.operator("object.extract_rabbit_ears", icon='LAYER_USED')
-        layout.operator("object.extract_cat_ears", icon='LAYER_USED')
-        
         # Export section
-        layout.label(text="Export", icon='EXPORT')
+        layout.label(text="Split/Export/Delete Subgraphics", icon='EXPORT')
 
         # Display warning if blend file is not saved
         if not blend_file_saved:
             layout.label(text="Warning: Blend file not saved!", icon='ERROR')
 
-        # Extract Glasses button (moved here and tied to blend_file_saved)
+        # Extract Glasses button
         glasses_button = layout.row()
         glasses_button.enabled = blend_file_saved
-        glasses_button.operator("object.extract_glasses", icon='LAYER_USED')
+        glasses_button.operator("object.extract_glasses", icon='HIDE_OFF')
+
+        # Add "No Export" toggle for glasses
+        layout.prop(context.scene, "no_export_glasses", text="Seperate Only Mode")
+
+        # Export section
+        layout.label(text="Export VRM for Bakin", icon='EXPORT')
 
         # Export buttons
         vrm_export_button = layout.row()
@@ -1449,6 +1487,8 @@ def register():
     bpy.utils.register_class(OBJECT_OT_dialog_operator)
     
     bpy.types.Scene.animation_name = bpy.props.StringProperty(name="Animation Name", default="Idle")
+    bpy.types.Scene.no_export_glasses = bpy.props.BoolProperty(name="No Export Glasses", default=False)
+
 
 def unregister():
     bpy.utils.unregister_class(ImportVRMButton)
@@ -1466,6 +1506,7 @@ def unregister():
     bpy.utils.unregister_class(ExportAnimationFromBase)
     bpy.utils.unregister_class(OBJECT_OT_dialog_operator)
     del bpy.types.Scene.animation_name
+    del bpy.types.Scene.no_export_glasses
 
 
 if __name__ == "__main__":
