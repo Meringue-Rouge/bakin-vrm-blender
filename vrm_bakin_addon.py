@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Bakin VRM",
     "author": "ingenoire",
-    "version": (5, 2, 0),
+    "version": (5, 3, 0),
     "blender": (2, 80, 0),
     "location": "View3D > Tool Shelf > Run Script Button",
     "description": "Adds buttons that create itemhook bones and shape keys for both eye and head movement for VRoid VRM characters, for use with RPG Developer Bakin.",
@@ -1200,6 +1200,26 @@ class ImportBakinFBX(bpy.types.Operator):
     bl_label = "Process FBX for Bakin"
     bl_options = {'REGISTER', 'UNDO'}
 
+    file_type: bpy.props.EnumProperty(
+        name="File Type",
+        description="Choose the FBX file type to import",
+        items=[
+            ('humanoid', "VRM Humanoid", "Import the (BakinVRM).vrm.humanoid FBX file"),
+            ('mixamo', "Mixamo", "Import the (BakinVRM).vrm.mixamo FBX file"),
+            ('x100', "X100", "Import the (BakinVRM).vrm.x100 FBX file"),
+            ('legacy', "Legacy VRM FBX", "Import the (BakinVRM).vrm.fbx file (outdated)")
+        ],
+        default='humanoid'
+    )
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "file_type", text="Select File Type")
+        layout.label(text="Choose the FBX file type and click OK to import.")
+
     def execute(self, context):
         # 1. CHECK IF BLEND FILE IS SAVED
         blend_filepath = bpy.data.filepath
@@ -1233,16 +1253,25 @@ class ImportBakinFBX(bpy.types.Operator):
             self.report({'ERROR'}, "VRM model name not found in metadata.")
             return {'CANCELLED'}
 
-        # 4. IMPORT FBX AT SCALE 100x
-        fbx_path = os.path.join(blend_directory, f"{vrm_name}(BakinVRM)", f"{vrm_name}(BakinVRM).vrm.fbx")
+        # 4. DETERMINE FBX PATH BASED ON SELECTED FILE TYPE
+        file_suffix = {
+            'humanoid': '.vrm.humanoid.fbx',
+            'mixamo': '.vrm.mixamo.fbx',
+            'x100': '.vrm.x100.fbx',
+            'legacy': '.vrm.fbx'
+        }[self.file_type]
+        
+        fbx_path = os.path.join(blend_directory, f"{vrm_name}(BakinVRM)", f"{vrm_name}(BakinVRM){file_suffix}")
         
         if not os.path.exists(fbx_path):
             self.report({'ERROR'}, f"FBX file not found: {fbx_path}")
             return {'CANCELLED'}
 
-        bpy.ops.import_scene.fbx(filepath=fbx_path, global_scale=100.0)
+        # 5. IMPORT FBX WITH APPROPRIATE SCALE
+        scale = 0.01 if self.file_type == 'x100' else 100.0
+        bpy.ops.import_scene.fbx(filepath=fbx_path, global_scale=scale)
 
-        # 5. FIND NEWLY IMPORTED ARMATURE
+        # 6. FIND NEWLY IMPORTED ARMATURE
         imported_armature = None
         for obj in bpy.context.selected_objects:
             if obj.type == 'ARMATURE':
@@ -1253,9 +1282,10 @@ class ImportBakinFBX(bpy.types.Operator):
             self.report({'ERROR'}, "Failed to find imported armature.")
             return {'CANCELLED'}
         
-        # 6. SET THE SCENE FRAME RATE BACK TO 60
+        # 7. SET THE SCENE FRAME RATE BACK TO 60
         context.scene.render.fps = 60
 
+        self.report({'INFO'}, f"Imported {file_suffix} FBX from: {fbx_path}")
         return {'FINISHED'}
     
 class ExportAnimationFromBase(bpy.types.Operator):
