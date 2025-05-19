@@ -69,13 +69,16 @@ class AddItemHooksButton(bpy.types.Operator):
         
         return {'FINISHED'}
 
-class AddHeadEyeShapeKeysButton(bpy.types.Operator):
-    bl_idname = "object.add_head_eye_shape_keys"
-    bl_label = "Add Head + Eye Shape Keys"
-    bl_description = "Adds Shape Keys for both eye positioning and head tilt / rotation. This will let you pose the eyes / head in real time using BAKIN's Blend Shapes. Mix & match in bakin for best results."
+
+# Remove the existing AddHeadEyeShapeKeysButton class and replace with these two classes
+
+class AddEyeShapeKeysButton(bpy.types.Operator):
+    bl_idname = "object.add_eye_shape_keys"
+    bl_label = "Add Eye Shape Keys"
+    bl_description = "Adds Shape Keys for eye positioning. This will let you pose the eyes in real time using BAKIN's Blend Shapes."
 
     def execute(self, context):
-        # Define the rotations for each shape key
+        # Define the rotations for eye shape keys only
         rotations = {
             "EYE_LR_RIGHT": ('Z', math.radians(-8), 'J_Adj_L_FaceEye', 'J_Adj_R_FaceEye'),
             "EYE_LR_LEFT": ('Z', math.radians(12), 'J_Adj_L_FaceEye', 'J_Adj_R_FaceEye'),
@@ -89,6 +92,68 @@ class AddHeadEyeShapeKeysButton(bpy.types.Operator):
             "EYE_L_OUTER": ('Z', math.radians(-12), 'J_Adj_L_FaceEye'),
             "EYE_L_UP": ('X', math.radians(-10), 'J_Adj_L_FaceEye'),
             "EYE_L_DOWN": ('X', math.radians(10), 'J_Adj_L_FaceEye'),
+        }
+
+        # Select the armature and enter pose mode
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.data.objects['Armature'].select_set(True)
+        bpy.context.view_layer.objects.active = bpy.data.objects['Armature']
+        bpy.ops.object.mode_set(mode='POSE')
+
+        # Store the initial pose
+        initial_pose = {bone: bone.rotation_euler.copy() for bone in bpy.data.objects['Armature'].pose.bones}
+
+        for shape_key_name, rotation_data in rotations.items():
+            axis, angle, *bones = rotation_data
+
+            for bone_name in bones:
+                # Select the bone and rotate it
+                bpy.data.objects['Armature'].pose.bones[bone_name].rotation_mode = 'XYZ'
+                if axis == 'Z':
+                    bpy.data.objects['Armature'].pose.bones[bone_name].rotation_euler[2] += angle
+                elif axis == 'X':
+                    bpy.data.objects['Armature'].pose.bones[bone_name].rotation_euler[0] += angle
+                elif axis == 'Y':
+                    bpy.data.objects['Armature'].pose.bones[bone_name].rotation_euler[1] += angle
+
+            # Apply the pose as a shape key
+            bpy.ops.object.mode_set(mode='OBJECT')
+            bpy.ops.object.select_all(action='DESELECT')
+
+            # Select the Face mesh for eye shape keys
+            bpy.data.objects['Face'].select_set(True)
+            bpy.context.view_layer.objects.active = bpy.data.objects['Face']
+
+            # Apply the armature modifier as a shape key
+            bpy.ops.object.modifier_apply_as_shapekey(modifier="Armature")
+
+            # Rename the shape key
+            bpy.context.object.data.shape_keys.key_blocks[-1].name = shape_key_name
+
+            # Re-add the armature modifier
+            bpy.ops.object.modifier_add(type='ARMATURE')
+            bpy.context.object.modifiers["Armature"].object = bpy.data.objects["Armature"]
+
+            # Reset the bone rotation to the initial pose
+            bpy.ops.object.select_all(action='DESELECT')
+            bpy.data.objects['Armature'].select_set(True)
+            bpy.context.view_layer.objects.active = bpy.data.objects['Armature']
+            bpy.ops.object.mode_set(mode='POSE')
+            for bone in bpy.data.objects['Armature'].pose.bones:
+                bone.rotation_euler = initial_pose[bone]
+
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        return {'FINISHED'}
+
+class AddHeadBodyShapeKeysButton(bpy.types.Operator):
+    bl_idname = "object.add_head_body_shape_keys"
+    bl_label = "Add Head + Body Shape Keys"
+    bl_description = "Adds Shape Keys for head tilt/rotation and body movement. This will let you pose the head and body in real time using BAKIN's Blend Shapes."
+
+    def execute(self, context):
+        # Define the rotations for head shape keys
+        head_rotations = {
             "HAIR_UP": ('X', math.radians(-30), 'J_Bip_C_Head'),
             "HAIR_DOWN": ('X', math.radians(30), 'J_Bip_C_Head'),
             "HAIR_LEFT": ('Y', math.radians(-30), 'J_Bip_C_Head'),
@@ -103,7 +168,7 @@ class AddHeadEyeShapeKeysButton(bpy.types.Operator):
             "HEAD_TILT_RIGHT": ('Z', math.radians(-30), 'J_Bip_C_Head'),
         }
 
-        # Define the BODY shape keys
+        # Define the body shape keys
         body_rotations = {
             "BODY_UP": ('X', math.radians(-30), 'J_Bip_C_Head'),
             "BODY_DOWN": ('X', math.radians(30), 'J_Bip_C_Head'),
@@ -129,7 +194,8 @@ class AddHeadEyeShapeKeysButton(bpy.types.Operator):
                 hair_mesh = obj
                 break
 
-        for shape_key_name, rotation_data in rotations.items():
+        # Process head (hair and head) shape keys
+        for shape_key_name, rotation_data in head_rotations.items():
             axis, angle, *bones = rotation_data
 
             for bone_name in bones:
@@ -146,7 +212,7 @@ class AddHeadEyeShapeKeysButton(bpy.types.Operator):
             bpy.ops.object.mode_set(mode='OBJECT')
             bpy.ops.object.select_all(action='DESELECT')
 
-            # Check if the hair mesh exists
+            # Check if the hair mesh exists for HAIR shape keys
             if "HAIR" in shape_key_name:
                 if hair_mesh is not None:
                     hair_mesh.select_set(True)
@@ -155,8 +221,8 @@ class AddHeadEyeShapeKeysButton(bpy.types.Operator):
                     bpy.data.objects['Body'].select_set(True)
                     bpy.context.view_layer.objects.active = bpy.data.objects['Body']
             else:
-                bpy.data.objects['Face'].select_set(True)
-                bpy.context.view_layer.objects.active = bpy.data.objects['Face']
+                bpy.data.objects['Body'].select_set(True)
+                bpy.context.view_layer.objects.active = bpy.data.objects['Body']
 
             # Apply the armature modifier as a shape key
             bpy.ops.object.modifier_apply_as_shapekey(modifier="Armature")
@@ -176,7 +242,7 @@ class AddHeadEyeShapeKeysButton(bpy.types.Operator):
             for bone in bpy.data.objects['Armature'].pose.bones:
                 bone.rotation_euler = initial_pose[bone]
 
-        # Process BODY shape keys
+        #每年 Process body shape keys
         for shape_key_name, rotation_data in body_rotations.items():
             axis, angle, *bones = rotation_data
 
@@ -506,21 +572,29 @@ class ImportVRMButton(bpy.types.Operator):
 
         return {'FINISHED'}
     
-
 class FusionAndAddBonusesButton(bpy.types.Operator):
     bl_idname = "object.fusion_and_add_bonuses"
     bl_label = "Fusion Meshes and Hair/Head Keys"
-    bl_description = "Strongly recommended (8 materials / unlimited materials only). Merges all meshes (including all with 'Hair' in the name) together and merges both head and hair shape keys into a new Head shapekey that handles both at once!"
+    bl_description = "Strongly recommended (8 materials / unlimited materials only). Merges available meshes (Body, Face, Hair) together and merges both head and hair shape keys into a new Head shapekey that handles both at once!"
 
     def execute(self, context):
-        # Ensure required objects exist (Face and Body) and find all Hair meshes
+        # Find available meshes (Body, Face, and any Hair meshes)
         hair_objects = [obj for obj in bpy.data.objects if "Hair" in obj.name and obj.type == 'MESH']
-        if not hair_objects or "Face" not in bpy.data.objects or "Body" not in bpy.data.objects:
-            self.report({'ERROR'}, "Required objects are missing (Hair, Face, Body).")
-            return {'CANCELLED'}
+        body = bpy.data.objects.get("Body")
+        face = bpy.data.objects.get("Face")
 
-        face = bpy.data.objects["Face"]
-        body = bpy.data.objects["Body"]
+        # Collect all valid meshes
+        available_meshes = []
+        if body:
+            available_meshes.append(body)
+        if face:
+            available_meshes.append(face)
+        available_meshes.extend(hair_objects)
+
+        # Check if at least two meshes are present
+        if len(available_meshes) < 2:
+            self.report({'ERROR'}, "At least two meshes (Body, Face, or Hair) are required for fusion.")
+            return {'CANCELLED'}
 
         # Dictionary to store the outline_width_mode values
         outline_width_mode_values = {}
@@ -534,34 +608,28 @@ class FusionAndAddBonusesButton(bpy.types.Operator):
                         outline_width_mode = material.vrm_addon_extension.mtoon1.extensions.vrmc_materials_mtoon.outline_width_mode
                         outline_width_mode_values[material.name] = outline_width_mode
                     except AttributeError:
-                        # If the material doesn't have this property, continue
                         pass
 
-        # Store outline_width_mode for all Hair objects, Face, and Body
-        for hair_obj in hair_objects:
-            store_outline_width_mode(hair_obj)
-        store_outline_width_mode(face)
-        store_outline_width_mode(body)
+        # Store outline_width_mode for all available meshes
+        for mesh in available_meshes:
+            store_outline_width_mode(mesh)
 
-        # Join all Hair objects into Face
+        # Select the first available mesh as the base for joining
         bpy.ops.object.select_all(action='DESELECT')
-        face.select_set(True)
-        bpy.context.view_layer.objects.active = face
+        base_mesh = available_meshes[0]
+        base_mesh.select_set(True)
+        bpy.context.view_layer.objects.active = base_mesh
         bpy.ops.object.mode_set(mode='OBJECT')
-        for hair_obj in hair_objects:
-            hair_obj.select_set(True)
-        bpy.ops.object.join()
 
-        # Join Face (now including all Hair) into Body
-        bpy.ops.object.select_all(action='DESELECT')
-        body.select_set(True)
-        bpy.context.view_layer.objects.active = body
-        bpy.ops.object.mode_set(mode='OBJECT')
-        face.select_set(True)
-        bpy.ops.object.join()
+        # Join all other meshes into the base mesh
+        for mesh in available_meshes[1:]:
+            mesh.select_set(True)
+        if len(available_meshes) > 1:
+            bpy.ops.object.join()
 
-        # Get the newly joined object (which is now the Body with Face and all Hair)
+        # Get the merged object
         merged_obj = bpy.context.active_object
+        merged_obj.name = "Body"  # Rename to Body for consistency
 
         # Reassign the outline_width_mode to the merged object's materials
         for mat_slot in merged_obj.material_slots:
@@ -578,7 +646,6 @@ class FusionAndAddBonusesButton(bpy.types.Operator):
 
         # Ensure the shape keys exist
         if merged_obj.data.shape_keys is None:
-            # Add a base shape key if none exist
             bpy.ops.object.shape_key_add()
 
         shape_keys = merged_obj.data.shape_keys
@@ -598,29 +665,41 @@ class FusionAndAddBonusesButton(bpy.types.Operator):
 
         head_vertex_group = merged_obj.vertex_groups["J_Bip_C_Head"]
 
+        # Combine shape keys where possible
         for head_key_name, head_key in head_keys.items():
             corresponding_hair_key_name = head_key_name.replace("HEAD_", "HAIR_")
             corresponding_body_key_name = head_key_name.replace("HEAD_", "BODY_")
-            if corresponding_hair_key_name in hair_keys and corresponding_body_key_name in body_keys:
-                itemlook_name = "HEAD_" + head_key_name.replace("HEAD_", "")
-                # Create a new shape key for ITEMLOOK
-                bpy.ops.object.shape_key_add()
-                new_key = shape_keys.key_blocks[-1]
-                new_key.name = itemlook_name
+            itemlook_name = "HEAD_" + head_key_name.replace("HEAD_", "")
 
-                # Apply head, hair, and body changes to the ITEMLOOK key
-                for vertex_index in range(len(merged_obj.data.vertices)):
-                    base_vertex = shape_keys.key_blocks[0].data[vertex_index].co
-                    head_vertex = head_key.data[vertex_index].co
+            # Create a new shape key for ITEMLOOK
+            bpy.ops.object.shape_key_add()
+            new_key = shape_keys.key_blocks[-1]
+            new_key.name = itemlook_name
+
+            # Apply changes from available shape keys
+            for vertex_index in range(len(merged_obj.data.vertices)):
+                base_vertex = shape_keys.key_blocks[0].data[vertex_index].co
+                new_vertex_position = base_vertex.copy()
+
+                # Add HEAD_ contribution
+                head_vertex = head_key.data[vertex_index].co
+                new_vertex_position += (head_vertex - base_vertex)
+
+                # Add HAIR_ contribution if available
+                if corresponding_hair_key_name in hair_keys:
                     hair_vertex = hair_keys[corresponding_hair_key_name].data[vertex_index].co
+                    new_vertex_position += (hair_vertex - base_vertex)
+
+                # Add BODY_ contribution if available
+                if corresponding_body_key_name in body_keys:
                     body_vertex = body_keys[corresponding_body_key_name].data[vertex_index].co
-                    new_vertex_position = base_vertex + (head_vertex - base_vertex) + (hair_vertex - base_vertex) + (body_vertex - base_vertex)
+                    new_vertex_position += (body_vertex - base_vertex)
 
-                    # Apply the new position to the shape key
-                    new_key.data[vertex_index].co = new_vertex_position
+                # Apply the new position to the shape key
+                new_key.data[vertex_index].co = new_vertex_position
 
-                # Ensure the new shape key is within the 0.0 to 1.0 range
-                new_key.value = min(new_key.value, 1.0)
+            # Ensure the new shape key is within the 0.0 to 1.0 range
+            new_key.value = min(new_key.value, 1.0)
 
         # Delete the original HEAD_, HAIR_, and BODY_ shape keys
         for head_key_name in list(head_keys.keys()):
@@ -640,6 +719,10 @@ class FusionAndAddBonusesButton(bpy.types.Operator):
             if key.name.startswith("HEAD_") and ".001" in key.name:
                 new_name = key.name.replace(".001", "")
                 key.name = new_name
+
+        # Report if only two meshes were fused
+        if len(available_meshes) == 2:
+            self.report({'INFO'}, "Only two meshes were found and fused.")
 
         bpy.ops.object.mode_set(mode='OBJECT')
         return {'FINISHED'}
@@ -1415,7 +1498,8 @@ class RunScriptButtonPanel(bpy.types.Panel):
         # Bakin Enhancements section
         layout.label(text="Bakin Enhancements", icon='OUTLINER_OB_ARMATURE')
         layout.operator("object.add_item_hooks", icon='EVENT_ONEKEY')
-        layout.operator("object.add_head_eye_shape_keys", icon='EVENT_TWOKEY')
+        layout.operator("object.add_eye_shape_keys", icon='EVENT_TWOKEY')
+        layout.operator("object.add_head_body_shape_keys", icon='EVENT_THREEKEY')
 
         # Button to create alternate irises
         layout.operator("object.create_alternate_irises", icon='VIS_SEL_11')
@@ -1484,7 +1568,8 @@ def register():
     bpy.utils.register_class(ImportVRMButton)
     bpy.utils.register_class(OBJECT_OT_export_vrm_for_bakin)
     bpy.utils.register_class(AddItemHooksButton)
-    bpy.utils.register_class(AddHeadEyeShapeKeysButton)
+    bpy.utils.register_class(AddEyeShapeKeysButton)
+    bpy.utils.register_class(AddHeadBodyShapeKeysButton)
     bpy.utils.register_class(FusionAndAddBonusesButton)
     bpy.utils.register_class(ExtractGlassesButton)
     bpy.utils.register_class(ExtractRabbitEarsButton)
@@ -1504,7 +1589,8 @@ def unregister():
     bpy.utils.unregister_class(ImportVRMButton)
     bpy.utils.unregister_class(AddItemHooksButton)
     bpy.utils.unregister_class(OBJECT_OT_export_vrm_for_bakin)
-    bpy.utils.unregister_class(AddHeadEyeShapeKeysButton)
+    bpy.utils.unregister_class(AddEyeShapeKeysButton)
+    bpy.utils.unregister_class(AddHeadBodyShapeKeysButton)
     bpy.utils.unregister_class(FusionAndAddBonusesButton)
     bpy.utils.unregister_class(ExportFBXUnifiedButton)
     bpy.utils.unregister_class(ExtractGlassesButton)
