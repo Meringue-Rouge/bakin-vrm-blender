@@ -1,7 +1,7 @@
 # Update bl_info for translation support
 bl_info = {
     "name": "Bakin VRM",
-    "author": "ingenoire",
+    "author": "Meringue Rouge",
     "version": (6, 0, 0),
     "blender": (2, 80, 0),
     "location": "View3D > Tool Shelf > Run Script Button",
