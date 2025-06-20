@@ -637,11 +637,14 @@ class ExportFBXUnifiedButton(bpy.types.Operator):
     def export_fbx(self, context, material_count, accurate_shadows_body_outlines, my_new_vrm_shader):
         is_vrm_10 = (bpy.data.objects['Armature'].data.vrm_addon_extension.spec_version == "1.0")
         
-        if(is_vrm_10):
+        if is_vrm_10:
             vrm_model_name = bpy.data.objects['Armature'].data.vrm_addon_extension.vrm1.meta['vrm_name'].replace(' ', '_')
         else:
             vrm_model_name = bpy.data.objects['Armature'].data.vrm_addon_extension.vrm0.meta.title.replace(' ', '_')
         
+        # Sanitize the VRM model name
+        vrm_model_name = re.sub(r'[<>:"/\\|?*\t\n\r]', '_', vrm_model_name)
+
         dirpath = bpy.path.abspath("//" + vrm_model_name + " (BakinVRM)")
         os.makedirs(dirpath, exist_ok=True)
 
@@ -1498,6 +1501,8 @@ class ExtractRabbitEarsButton(bpy.types.Operator):
 
         return {'FINISHED'}
     
+import re
+
 class OBJECT_OT_export_vrm_for_bakin(bpy.types.Operator):
     bl_idname = "object.export_vrm_for_bakin"
     bl_label = bpy.app.translations.pgettext("Export VRM for Bakin")
@@ -1505,7 +1510,7 @@ class OBJECT_OT_export_vrm_for_bakin(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        # Find the armature (VRM models use an armature)
+        # Find the armature
         armature = None
         for obj in bpy.data.objects:
             if obj.type == 'ARMATURE' and hasattr(obj.data, "vrm_addon_extension"):
@@ -1516,16 +1521,18 @@ class OBJECT_OT_export_vrm_for_bakin(bpy.types.Operator):
             self.report({'ERROR'}, "No valid VRM armature found.")
             return {'CANCELLED'}
 
-        # Extract VRM version
+        # Extract VRM version and name
         vrm_extension = armature.data.vrm_addon_extension
-        is_vrm_10 = (bpy.data.objects['Armature'].data.vrm_addon_extension.spec_version == "1.0")
+        is_vrm_10 = (vrm_extension.spec_version == "1.0")
         
-        if(is_vrm_10):
-            vrm_name = bpy.data.objects['Armature'].data.vrm_addon_extension.vrm1.meta['vrm_name'].replace(' ', '_')
+        if is_vrm_10:
+            vrm_name = vrm_extension.vrm1.meta.get('vrm_name', 'Unnamed').replace(' ', '_')
         else:
-            vrm_name = bpy.data.objects['Armature'].data.vrm_addon_extension.vrm0.meta.title.replace(' ', '_')
+            vrm_name = vrm_extension.vrm0.meta.title.replace(' ', '_')
 
-        # Validate VRM name
+        # Sanitize the VRM name for file system compatibility
+        vrm_name = re.sub(r'[<>:"/\\|?*\t\n\r]', '_', vrm_name)
+
         if not vrm_name:
             self.report({'ERROR'}, "VRM model name not found in metadata.")
             return {'CANCELLED'}
