@@ -2,7 +2,7 @@
 bl_info = {
     "name": "Bakin VRM",
     "author": "Meringue Rouge",
-    "version": (6, 1, 0),
+    "version": (6, 2, 0),
     "blender": (2, 80, 0),
     "location": "View3D > Tool Shelf > Run Script Button",
     "description": "Adds buttons that create itemhook bones and shape keys for both eye and head movement for VRoid VRM characters, for use with RPG Developer Bakin.",
@@ -481,14 +481,16 @@ class AddHeadBodyShapeKeysButton(bpy.types.Operator):
         # Store the initial pose
         initial_pose = {bone: bone.rotation_euler.copy() for bone in bpy.data.objects['Armature'].pose.bones}
 
-        # Find the hair mesh
+        # Find the hair and face meshes
         hair_mesh = None
+        face_mesh = None
         for obj in bpy.data.objects:
-            if "Hair" in obj.name:
+            if "Hair" in obj.name and obj.type == 'MESH':
                 hair_mesh = obj
-                break
+            if "Face" in obj.name and obj.type == 'MESH':
+                face_mesh = obj
 
-        # Process head (hair and head) shape keys
+        # Process head (hair, face, and head) shape keys
         for shape_key_name, rotation_data in head_rotations.items():
             axis, angle, *bones = rotation_data
 
@@ -506,14 +508,13 @@ class AddHeadBodyShapeKeysButton(bpy.types.Operator):
             bpy.ops.object.mode_set(mode='OBJECT')
             bpy.ops.object.select_all(action='DESELECT')
 
-            # Check if the hair mesh exists for HAIR shape keys
-            if "HAIR" in shape_key_name:
-                if hair_mesh is not None:
-                    hair_mesh.select_set(True)
-                    bpy.context.view_layer.objects.active = hair_mesh
-                else:
-                    bpy.data.objects['Body'].select_set(True)
-                    bpy.context.view_layer.objects.active = bpy.data.objects['Body']
+            # Apply to appropriate mesh based on shape key prefix
+            if "HAIR" in shape_key_name and hair_mesh:
+                hair_mesh.select_set(True)
+                bpy.context.view_layer.objects.active = hair_mesh
+            elif "HEAD" in shape_key_name and face_mesh:
+                face_mesh.select_set(True)
+                bpy.context.view_layer.objects.active = face_mesh
             else:
                 bpy.data.objects['Body'].select_set(True)
                 bpy.context.view_layer.objects.active = bpy.data.objects['Body']
@@ -536,7 +537,7 @@ class AddHeadBodyShapeKeysButton(bpy.types.Operator):
             for bone in bpy.data.objects['Armature'].pose.bones:
                 bone.rotation_euler = initial_pose[bone]
 
-        #每年 Process body shape keys
+        # Process body shape keys
         for shape_key_name, rotation_data in body_rotations.items():
             axis, angle, *bones = rotation_data
 
