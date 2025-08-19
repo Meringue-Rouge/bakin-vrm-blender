@@ -19,6 +19,24 @@
 - *If you wish to import general models for BAKIN using PBR, use this Blender add-on instead: https://github.com/Ingenoire/bakin-blender-exporter*
 - *If you wish to animate the VRM models with baked-in hair/bust/outfit physics for your Bakin game, check out this add-on I made: https://github.com/Ingenoire/VRM-Spacing-Animation-Baking*
 
+## Features / 特徴
+EN
+- Automated Item Hook Bones
+- Eye Look Blend Shaoes
+- Add Alternative Iris Textures (swap through Blend Shapes)
+- Add Alternative Blush Textures (swap through Blend Shapes)
+- Turn model's head in game with Head Tilt Blend Shapes (adds significant filesize weight)
+- Export in VRM or FBX format
+- Animation Exporter Utility, make your custom animations work properly by importing the generated rig, retargetting the animation, setting the name and then pressing the animation export button.
+  
+JP
+- 自動化アイテム フックボーン
+- アイ・ルック・ブレンド・シャオ
+- 代替アイリステクスチャの追加（ブレンドシェイプで入れ替え）
+- 代替チークテクスチャの追加（ブレンドシェイプでスワップ）
+- Head Tilt Blend Shapes（ヘッドチルトブレンドシェイプ）を使って、ゲーム内でモデルの頭を回転させる（ファイルサイズが大幅に重くなります）。
+- VRMまたはFBXフォーマットで書き出し
+- Animation Exporter Utilityは、生成されたリグをインポートし、アニメーションをリターゲットし、名前を設定してからアニメーションエクスポートボタンを押すことで、カスタムアニメーションを適切に動作させます。
 
 ## Installation / インストール
 EN
@@ -32,4 +50,4 @@ JP
 - アドオンは右サイドパネルに設定されている。 Nキーを押してサイドパネルを開き、VRoid for Bakinタブを見つけます。
 
 ### Credits
-The addon was made through Microsoft Copilot and ChatGPT (using the Blender scripting GPT), after a lot of trial and error and a few tweaks.
+The addon was made through Microsoft Copilot and ChatGPT (using the Blender scripting GPT), after a lot of trial and error and a few tweaks. Grok as well.
