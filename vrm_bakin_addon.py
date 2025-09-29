@@ -2,7 +2,7 @@
 bl_info = {
     "name": "Bakin VRM",
     "author": "Meringue Rouge",
-    "version": (6, 2, 0),
+    "version": (6, 2, 1),
     "blender": (2, 80, 0),
     "location": "View3D > Tool Shelf > Run Script Button",
     "description": "Adds buttons that create itemhook bones and shape keys for both eye and head movement for VRoid VRM characters, for use with RPG Developer Bakin.",
@@ -1842,22 +1842,15 @@ class RunScriptButtonPanel(bpy.types.Panel):
         # Animation section
         layout.label(text=bpy.app.translations.pgettext("Animation Exporter"), icon='EXPORT')
 
-        addon_module_name = "blender-animation-retargeting-stable"
-        addon_installed = False
-        for addon in bpy.context.preferences.addons:
-            if addon.module == addon_module_name:
-                addon_installed = True
-                break
+        # Always show the download link as an extra
+        layout.label(text=bpy.app.translations.pgettext("Animation Retargeting Add-on:"), icon='INFO')
+        download_link = layout.row()
+        download_link.operator("wm.url_open", text=bpy.app.translations.pgettext("Download Animation Retargeting"), icon='URL').url = "https://github.com/Mwni/blender-animation-retargeting"
 
-        if addon_installed:
-            layout.label(text=bpy.app.translations.pgettext("Animation Retargeting is installed."), icon='CHECKMARK')
-            layout.operator("object.import_fbx_from_bakin", text=bpy.app.translations.pgettext("Import Bakin Retarget Model"), icon='ANIM_DATA')
-            layout.prop(context.scene, "animation_name", text=bpy.app.translations.pgettext("Anim Name"))
-            layout.operator("object.export_base_animation", text=bpy.app.translations.pgettext("Export _base_ Animation"), icon='ANIM')
-        else:
-            layout.label(text=bpy.app.translations.pgettext("Animation Retargeting not found. Please download:"))
-            download_link = layout.row()
-            download_link.operator("wm.url_open", text=bpy.app.translations.pgettext("Download Animation Retargeting"), icon='URL').url = "https://github.com/Mwni/blender-animation-retargeting"
+        # Always show the animation tools
+        layout.operator("object.import_fbx_from_bakin", text=bpy.app.translations.pgettext("Import Bakin Retarget Model"), icon='ANIM_DATA')
+        layout.prop(context.scene, "animation_name", text=bpy.app.translations.pgettext("Anim Name"))
+        layout.operator("object.export_base_animation", text=bpy.app.translations.pgettext("Export _base_ Animation"), icon='ANIM')
 
         export_descriptions = [
             bpy.app.translations.pgettext("VRM only: import the model into Bakin before animating!")
