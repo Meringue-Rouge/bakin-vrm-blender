@@ -2,7 +2,7 @@
 bl_info = {
     "name": "Bakin VRM",
     "author": "Meringue Rouge",
-    "version": (6, 2, 1),
+    "version": (6, 2, 2),
     "blender": (2, 80, 0),
     "location": "View3D > Tool Shelf > Run Script Button",
     "description": "Adds buttons that create itemhook bones and shape keys for both eye and head movement for VRoid VRM characters, for use with RPG Developer Bakin.",
@@ -1845,7 +1845,7 @@ class RunScriptButtonPanel(bpy.types.Panel):
         # Always show the download link as an extra
         layout.label(text=bpy.app.translations.pgettext("Animation Retargeting Add-on:"), icon='INFO')
         download_link = layout.row()
-        download_link.operator("wm.url_open", text=bpy.app.translations.pgettext("Download Animation Retargeting"), icon='URL').url = "https://github.com/Mwni/blender-animation-retargeting"
+        download_link.operator("wm.url_open", text=bpy.app.translations.pgettext("Download Animation Retargeting Fork (Blender 5)"), icon='URL').url = "https://github.com/Meringue-Rouge/blender-animation-retargeting"
 
         # Always show the animation tools
         layout.operator("object.import_fbx_from_bakin", text=bpy.app.translations.pgettext("Import Bakin Retarget Model"), icon='ANIM_DATA')
