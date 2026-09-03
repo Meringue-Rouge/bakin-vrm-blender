@@ -2,7 +2,7 @@
 bl_info = {
     "name": "Bakin VRM",
     "author": "Meringue Rouge",
-    "version": (6, 2, 2),
+    "version": (6, 2, 3),
     "blender": (2, 80, 0),
     "location": "View3D > Tool Shelf > Run Script Button",
     "description": "Adds buttons that create itemhook bones and shape keys for both eye and head movement for VRoid VRM characters, for use with RPG Developer Bakin.",
@@ -1049,8 +1049,7 @@ class CreateAlternateIrisesButton(bpy.types.Operator):
             self.report({'ERROR'}, "No file selected")
             return None
         try:
-            image = bpy.data.images.load(filepath)
-            return image
+            return bpy.data.images.load(filepath)
         except Exception as e:
             self.report({'ERROR'}, f"Failed to load image: {str(e)}")
             return None
@@ -1061,154 +1060,120 @@ class CreateAlternateIrisesButton(bpy.types.Operator):
         if not face_mesh or not armature:
             self.report({'ERROR'}, "Required objects not found.")
             return {'CANCELLED'}
-        
-        # Create vertex groups for alternate irises
+
         for side in ['L', 'R']:
             for i in range(1, 5):
                 group_name = f'J_Adj_{side}_FaceEyeAlt{i}'
                 if group_name not in face_mesh.vertex_groups:
                     face_mesh.vertex_groups.new(name=group_name)
-        
-        # Enter edit mode
+
         bpy.context.view_layer.objects.active = face_mesh
         bpy.ops.object.mode_set(mode='EDIT')
-        bm = bmesh.from_edit_mesh(face_mesh.data)
-        deform_layer = bm.verts.layers.deform.verify()
-        
-        # Calculate eye centers
-        eye_centers = {}
+        bpy.context.tool_settings.mesh_select_mode = (True, False, False)
+        bpy.context.scene.tool_settings.use_proportional_edit = False
+
         for side in ['L', 'R']:
             base_group_name = f'J_Adj_{side}_FaceEye'
             base_group = face_mesh.vertex_groups.get(base_group_name)
-            if base_group:
-                base_vertices = [v for v in bm.verts if base_group.index in v[deform_layer]]
-                if base_vertices:
-                    center = sum((v.co for v in base_vertices), mathutils.Vector()) / len(base_vertices)
-                    eye_centers[side] = center
-                else:
-                    self.report({'ERROR'}, f"No vertices found in {base_group_name} group.")
-                    return {'CANCELLED'}
-        
-        # Store positions and indices
-        normal_positions = {}
-        group_vertex_indices = {}
-        for side in ['L', 'R']:
-            base_group_name = f'J_Adj_{side}_FaceEye'
-            base_group = face_mesh.vertex_groups[base_group_name]
-            group_vertex_indices[base_group_name] = [v.index for v in bm.verts if base_group.index in v[deform_layer]]
-        
-        # Duplicate and process alternate irises
-        uv_layer = bm.loops.layers.uv.active
-        # Texture is 4096x4096, divided into 4 blocks of 2048x2048
-        # Each block: top half (highlights), bottom half (iris)
-        # UV offsets should map to bottom half of each block
-        uv_offsets = [
-            (0.0, 0.0),    # Bottom-left block (0,0 to 0.5,0.5)
-            (0.5, 0.0),    # Bottom-right block (0.5,0 to 1,0.5)
-            (0.0, 0.5),    # Top-left block (0,0.5 to 0.5,1)
-            (0.5, 0.5)     # Top-right block (0.5,0.5 to 1,1)
-        ]
-        for i in range(1, 5):
-            for side in ['L', 'R']:
+            if not base_group:
+                self.report({'ERROR'}, f"Vertex group {base_group_name} not found.")
+                bpy.ops.object.mode_set(mode='OBJECT')
+                return {'CANCELLED'}
+
+            for i in range(1, 5):
                 new_group_name = f'J_Adj_{side}_FaceEyeAlt{i}'
-                base_group_name = f'J_Adj_{side}_FaceEye'
-                base_group = face_mesh.vertex_groups[base_group_name]
-                new_group = face_mesh.vertex_groups[new_group_name]
-                
-                # Select base group vertices
+
                 bpy.ops.mesh.select_all(action='DESELECT')
                 face_mesh.vertex_groups.active = base_group
                 bpy.ops.object.vertex_group_select()
-                
-                # Duplicate selected vertices
+
                 bpy.ops.mesh.duplicate()
-                
-                # Get duplicated vertices
-                bm = bmesh.from_edit_mesh(face_mesh.data)  # Refresh BMesh
-                selected_verts = [v for v in bm.verts if v.select]
-                if not selected_verts:
-                    self.report({'ERROR'}, f"Failed to duplicate vertices for {new_group_name}.")
-                    return {'CANCELLED'}
-                
-                # Assign duplicated vertices to new group and remove from base group
-                for v in selected_verts:
-                    v[deform_layer][new_group.index] = 1.0
-                    if base_group.index in v[deform_layer]:
-                        del v[deform_layer][base_group.index]
-                    normal_positions[(new_group_name, v.index)] = v.co.copy()
-                    v.co = eye_centers[side]
-                
-                # Shift UVs for duplicated vertices
-                for vert in selected_verts:
-                    for loop in vert.link_loops:
-                        # Original UV range is [0,1] for the entire face texture
-                        # We need to scale and offset to map to the bottom half of the 2048x2048 block
-                        # Bottom half of a block: Y from 0 to 0.5 (in texture space, 0 to 0.25 in 4096x4096)
-                        uv = loop[uv_layer].uv
-                        # Scale UVs to fit within a 2048x2048 block (0.5x0.5 in UV space)
-                        uv.x = uv.x * 0.5
-                        uv.y = uv.y * 0.25
-                        # Offset to the correct block
-                        uv.x += uv_offsets[i-1][0]
-                        uv.y += uv_offsets[i-1][1]
-                
-                group_vertex_indices[new_group_name] = [v.index for v in selected_verts]
-        
-        # Assign material to duplicated faces
-        new_material_name = "EYE_ALTERNATIVE_IRISES"
-        new_material = bpy.data.materials.get(new_material_name)
-        if not new_material:
-            original_material = bpy.data.materials.get("N00_000_00_FaceMouth_00_FACE (Instance)")
-            if original_material:
-                new_material = original_material.copy()
-                new_material.name = new_material_name
-            else:
-                self.report({'ERROR'}, "Original material not found.")
-                return {'CANCELLED'}
-        if new_material.name not in [mat.name for mat in face_mesh.data.materials]:
-            face_mesh.data.materials.append(new_material)
-        material_index = face_mesh.data.materials.find(new_material.name)
-        
-        # Update material for faces containing alternate iris vertices
-        bpy.ops.mesh.select_all(action='DESELECT')
-        for side in ['L', 'R']:
-            for i in range(1, 5):
-                new_group = face_mesh.vertex_groups[f'J_Adj_{side}_FaceEyeAlt{i}']
+                bpy.ops.transform.translate(
+                    value=(0, 0.015, 0),
+                    orient_type='GLOBAL',
+                    use_proportional_edit=False,
+                )
+
+                bpy.ops.object.vertex_group_remove_from()
+                new_group = face_mesh.vertex_groups.get(new_group_name)
                 face_mesh.vertex_groups.active = new_group
+                if new_group:
+                    bpy.ops.object.vertex_group_assign()
+
+                bpy.ops.mesh.select_all(action='DESELECT')
                 bpy.ops.object.vertex_group_select()
-        bm = bmesh.from_edit_mesh(face_mesh.data)  # Refresh BMesh
-        for face in bm.faces:
-            if any(vert.select for vert in face.verts):
-                face.material_index = material_index
-        
-        # Apply texture to material
-        if hasattr(new_material, 'vrm_addon_extension'):
-            vrm_extension = new_material.vrm_addon_extension
-            if hasattr(vrm_extension, 'mtoon1') and hasattr(vrm_extension.mtoon1, 'pbr_metallic_roughness'):
-                vrm_extension.mtoon1.pbr_metallic_roughness.base_color_texture.index.source = image
-            else:
-                self.report({'WARNING'}, "Could not set texture in VRM extension.")
-        
-        # Update and exit edit mode
-        bmesh.update_edit_mesh(face_mesh.data)
+
+                new_material_name = "EYE_ALTERNATIVE_IRISES"
+                new_material = bpy.data.materials.get(new_material_name)
+                if not new_material:
+                    original_material = bpy.data.materials.get("N00_000_00_FaceMouth_00_FACE (Instance)")
+                    if original_material is None:
+                        original_material = bpy.data.materials.get("N00_000_00_FaceMouth_00_FACE")
+                    if original_material is None:
+                        for mat in bpy.data.materials:
+                            n = mat.name.upper()
+                            if "MTOON OUTLINE" in n:
+                                continue
+                            if "FACEMOUTH" in n or ("IRIS" in n and "FACE" in n) or ("EYE" in n and "FACE" in n):
+                                original_material = mat
+                                break
+                    if original_material:
+                        new_material = original_material.copy()
+                        new_material.name = new_material_name
+                    else:
+                        self.report({'ERROR'}, "Original material not found.")
+                        bpy.ops.object.mode_set(mode='OBJECT')
+                        return {'CANCELLED'}
+
+                if new_material.name not in [mat.name for mat in face_mesh.data.materials]:
+                    face_mesh.data.materials.append(new_material)
+
+                material_index = face_mesh.data.materials.find(new_material.name)
+                face_mesh.active_material_index = material_index
+                bpy.ops.object.material_slot_assign()
+
+                if hasattr(new_material, 'vrm_addon_extension'):
+                    vrm_extension = new_material.vrm_addon_extension
+                    if hasattr(vrm_extension, 'mtoon1') and hasattr(vrm_extension.mtoon1, 'pbr_metallic_roughness'):
+                        vrm_extension.mtoon1.pbr_metallic_roughness.base_color_texture.index.source = image
+
         bpy.ops.object.mode_set(mode='OBJECT')
-        
-        # Create shape keys
-        if face_mesh.data.shape_keys is None:
-            face_mesh.shape_key_add(name="Basis")
+
+        # 2nd revision mapping: scale original eye UVs into one 2048 block
+        # of the 4096 atlas (0.5 x 0.25), then add the quadrant offset.
+        # Y is added (not subtracted) — this is the mapping that lined up.
         for i in range(1, 5):
-            shape_key = face_mesh.shape_key_add(name=f"ALTERNATE_IRIS_{i}")
+            bpy.context.view_layer.objects.active = face_mesh
+            bpy.ops.object.mode_set(mode='EDIT')
+            bm = bmesh.from_edit_mesh(face_mesh.data)
+            uv_layer = bm.loops.layers.uv.active
+            uv_offsets = [
+                (0.0, 0.0),
+                (0.5, 0.0),
+                (0.0, 0.5),
+                (0.5, 0.5),
+            ]
+
             for side in ['L', 'R']:
-                alt_group_name = f'J_Adj_{side}_FaceEyeAlt{i}'
-                base_group_name = f'J_Adj_{side}_FaceEye'
-                alt_vertices = group_vertex_indices[alt_group_name]
-                base_vertices = group_vertex_indices[base_group_name]
-                for vert_index in alt_vertices:
-                    shape_key.data[vert_index].co = normal_positions[(alt_group_name, vert_index)]
-                for vert_index in base_vertices:
-                    shape_key.data[vert_index].co = eye_centers[side]
-        
-        # Create bones
+                face_mesh.vertex_groups.active = face_mesh.vertex_groups.get(f'J_Adj_{side}_FaceEyeAlt{i}')
+                bpy.ops.mesh.select_all(action='DESELECT')
+                bpy.ops.object.vertex_group_select()
+                bm.select_flush_mode()
+
+                for face in bm.faces:
+                    if face.select:
+                        for loop in face.loops:
+                            uv = loop[uv_layer].uv
+                            uv.x = uv.x * 0.5
+                            uv.y = uv.y * 0.25
+                            uv.x += uv_offsets[i-1][0]
+                            uv.y += uv_offsets[i-1][1]
+
+                bpy.ops.mesh.select_all(action='DESELECT')
+
+            bmesh.update_edit_mesh(face_mesh.data)
+            bpy.ops.object.mode_set(mode='OBJECT')
+
         bpy.context.view_layer.objects.active = armature
         bpy.ops.object.mode_set(mode='EDIT')
         for side in ['L', 'R']:
@@ -1223,8 +1188,43 @@ class CreateAlternateIrisesButton(bpy.types.Operator):
                         new_bone.tail = base_bone.tail
                         new_bone.parent = base_bone
         bpy.ops.object.mode_set(mode='OBJECT')
-        return {'FINISHED'}
 
+        bpy.context.view_layer.objects.active = face_mesh
+        if face_mesh.data.shape_keys is None:
+            bpy.ops.object.shape_key_add(name="Basis", from_mix=False)
+
+        for kb in face_mesh.data.shape_keys.key_blocks:
+            kb.value = 0.0
+        face_mesh.active_shape_key_index = 0
+
+        for i in range(1, 5):
+            shape_key_name = f"ALTERNATE_IRIS_{i}"
+            shape_key = face_mesh.shape_key_add(name=shape_key_name, from_mix=False)
+            shape_key.value = 0.0
+            face_mesh.active_shape_key_index = len(face_mesh.data.shape_keys.key_blocks) - 1
+
+            bpy.ops.object.mode_set(mode='EDIT')
+            bm = bmesh.from_edit_mesh(face_mesh.data)
+
+            for side in ['L', 'R']:
+                alt_group = face_mesh.vertex_groups.get(f'J_Adj_{side}_FaceEyeAlt{i}')
+                base_group = face_mesh.vertex_groups.get(f'J_Adj_{side}_FaceEye')
+                if alt_group and base_group:
+                    move_vertices_in_group(bm, face_mesh, alt_group.index, (0, -0.015, 0))
+                    move_vertices_in_group(bm, face_mesh, base_group.index, (0, 0.015, 0))
+
+            bmesh.update_edit_mesh(face_mesh.data)
+            bpy.ops.object.mode_set(mode='OBJECT')
+            shape_key.value = 0.0
+
+        for kb in face_mesh.data.shape_keys.key_blocks:
+            if kb.name.startswith("ALTERNATE_IRIS_"):
+                kb.value = 0.0
+        face_mesh.active_shape_key_index = 0
+        face_mesh.use_shape_key_edit_mode = False
+
+        self.report({'INFO'}, "Alternate irises created successfully.")
+        return {'FINISHED'}
 
 
 def move_vertices_in_group(bm, mesh_obj, group_index, translation_vector):
